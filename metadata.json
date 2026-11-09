@@ -1,0 +1,8 @@
+{
+  "name": "PayFlow – Digital Wallet & Transaction Management System",
+  "description": "Realistic digital wallet and transaction management system demonstrating double-entry ledger, concurrency control, idempotency, and secure payments architecture.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
