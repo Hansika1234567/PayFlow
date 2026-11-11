@@ -30,10 +30,10 @@ def format_deposit_idempotency_key(raw_key: str) -> str:
         return prefixed
     return f"dep:{hashlib.sha256(cleaned.encode()).hexdigest()[:60]}"
 
-def get_or_create_wallet(db: Session, user: User, auto_commit: bool = True) -> Wallet:
+def get_or_create_wallet(db: Session, user: User, auto_commit: bool = False) -> Wallet:
     """
     Retrieves the user's wallet. If missing, automatically provisions one with welcome ledger entry.
-    When auto_commit is False, the operations remain uncommitted within the caller's transaction boundary.
+    Defaults to auto_commit=False so callers explicitly own their transaction boundaries.
     """
     wallet = db.query(Wallet).filter(Wallet.user_id == user.id).first()
     if not wallet:

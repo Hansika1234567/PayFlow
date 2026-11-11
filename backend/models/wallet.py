@@ -44,5 +44,6 @@ class Wallet(Base):
 
     @property
     def balance_dollars_formatted(self) -> str:
-        """Fixed-point string representation (e.g. '1000.00') avoiding floating-point serialization drift."""
-        return f"{self.balance / 100.0:.2f}"
+        """Fixed-point string representation (e.g. '1000.00') using integer-only arithmetic to avoid float drift."""
+        dollars, cents = divmod(self.balance, 100)
+        return f"{dollars}.{cents:02d}"
