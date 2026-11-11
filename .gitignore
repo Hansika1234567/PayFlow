@@ -6,3 +6,19 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# SQLite & Database files
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Python & Testing artifacts
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+backups/

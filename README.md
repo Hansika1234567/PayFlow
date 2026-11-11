@@ -1,6 +1,6 @@
 # PayFlow – Digital Wallet & Transaction Management System
 
-A production-grade, simulated digital wallet and financial ledger built with **Python (FastAPI)**, **SQLAlchemy ORM**, and **React**. Designed specifically to demonstrate core backend systems engineering concepts evaluated in FinTech software engineering interviews (e.g. **PayPal, Stripe, Square**).
+A simulated digital wallet and financial ledger system built with **Python (FastAPI)**, **SQLAlchemy ORM**, and **React**. Designed specifically to demonstrate core backend systems engineering and transactional integrity concepts evaluated in FinTech software engineering (e.g. double-entry accounting, atomic balance updates, deterministic locking, and idempotency).
 
 ---
 
@@ -8,7 +8,7 @@ A production-grade, simulated digital wallet and financial ledger built with **P
 
 Unlike toy wallet applications that simply execute `balance -= amount`, PayFlow enforces:
 1. **Double-Entry Bookkeeping**: Every transfer of `$X` generates two immutable, synchronized ledger entries: a `DEBIT` on the sender and a `CREDIT` on the receiver.
-2. **Pessimistic Concurrency Control**: Deterministic lock ordering (`min(wallet_a, wallet_b)` then `max(...)`) eliminates circular wait deadlocks during concurrent bidirectional transfers.
+2. **Pessimistic Concurrency Control**: Deterministic lock ordering (`min(wallet_a, wallet_b)` then `max(...)`) prevents circular wait deadlocks during concurrent bidirectional transfers.
 3. **Atomic SQL Mutations**: Balance updates execute directly on the database engine (`UPDATE wallets SET balance = balance - :amount`) to prevent in-memory read-modify-write lost updates.
 4. **Idempotency Protection**: Client-provided UUID idempotency keys prevent duplicate deductions on network drop retries.
 5. **Exact Integer-Cents Arithmetic**: Monetary amounts are stored in integer cents (`BigInteger`) to eliminate IEEE-754 floating-point drift.
@@ -50,7 +50,7 @@ Unlike toy wallet applications that simply execute `balance -= amount`, PayFlow 
 ┌────────────────────────────────────────────────────────────────────────┐
 │              PERSISTENCE LAYER (SQLAlchemy 2.0 ORM)                    │
 │  - SQLite (WAL mode, busy_timeout=15000, BEGIN IMMEDIATE hook)         │
-│  - Fully compatible with PostgreSQL (drop-in DATABASE_URL)             │
+│  - PostgreSQL compatibility implemented (live integration testing pending) │
 │  - Tables: users, wallets, transactions, ledger_entries                │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -105,11 +105,11 @@ users (1) ────────── (1) wallets (1) ───────�
 ### 1. Why Integer Cents Instead of Floats?
 Binary floating point representations (IEEE-754) cannot accurately represent decimal fractions like `0.1` or `0.01` in base-2 (e.g. `0.1 + 0.2 = 0.30000000000000004`). In a system processing thousands of transactions, accumulated rounding error leads to catastrophic financial drift. PayFlow enforces integer cents throughout the ORM, services, and arithmetic.
 
-### 2. How Deterministic Lock Ordering Eliminates Deadlocks
+### 2. How Deterministic Lock Ordering Prevents Transfer Deadlocks
 A deadlock requires **Circular Wait**. If Alice sends to Bob while Bob sends to Alice simultaneously:
 - Thread 1 locks Alice and waits for Bob.
 - Thread 2 locks Bob and waits for Alice.
-- Both freeze forever.
+- Both threads freeze waiting on each other.
 
 **PayFlow Solution**:
 ```python
@@ -119,7 +119,7 @@ second_id = max(sender_wallet.id, receiver_wallet.id)
 wallet_a = db.query(Wallet).filter(Wallet.id == first_id).with_for_update().first()
 wallet_b = db.query(Wallet).filter(Wallet.id == second_id).with_for_update().first()
 ```
-Because both concurrent threads acquire the lower ID first, Thread 2 blocks *before* locking any resource. The circular wait condition is mathematically impossible.
+Because both concurrent threads acquire the lower ID first, Thread 2 waits before locking any resource needed by Thread 1. This deterministic acquisition ordering eliminates circular wait conditions for two-wallet transfer pairs, significantly reducing deadlock risks (although broader multi-table locks, cascade triggers, or concurrent schema operations can still require deadlock handling in full production systems).
 
 ### 3. Atomic SQL Mutations vs. In-Memory Subtraction
 In standard Python code:
@@ -177,19 +177,21 @@ Every balance mutation has a permanent, tamper-evident counterpart in `ledger_en
 
 ## 5. Automated Testing Suite
 
-PayFlow includes **25 automated Pytest tests** covering unit, integration, multi-threaded concurrency, mathematical reconciliation, and security scenarios:
+PayFlow includes **37 automated Pytest tests** (passing with 2 deprecation warnings from upstream dependencies) covering unit, integration, multi-threaded concurrency, deposit idempotency, mathematical reconciliation, and safety scenarios:
 
 ```bash
 # Run all tests
 python3 -m pytest tests/ -v
 ```
 
-### Verified Test Breakdown (25/25 Passing):
+### Verified Test Breakdown (37/37 Passing, 2 Warnings):
 - `tests/test_health.py` (2 tests): Database ping and OpenAPI schema generation.
 - `tests/test_auth.py` (7 tests): Registration, duplicate prevention, password hashing, JWT bearer enforcement, production secret key validation rejection, and dynamic CORS headers.
 - `tests/test_transfers.py` (9 tests): Atomic transfers, double-entry balance conservation, idempotency replay protection, insufficient balance rejection, self-transfer rejection, nonexistent user handling, strict 2-decimal scale validation, idempotency parameter mismatch rejection (HTTP 400), and concurrent duplicate key collision resolution.
+- `tests/test_deposits.py` (5 tests): Concurrent deposits with distinct keys, deposit idempotency payload mismatch rejection (HTTP 400), concurrent identical deposit replay deduplication, deposit/transfer idempotency namespace isolation, and atomic rollback on deposit failure.
 - `tests/test_ledger.py` (6 tests): Welcome credit recording, DEBIT/CREDIT filtering, pagination slicing, high-level transaction feed, database-level trigger immutability enforcement, and complete mathematical balance reconciliation ($\text{Balance} == \sum \text{Credits} - \sum \text{Debits}$).
-- `tests/test_concurrency.py` (1 test): **10-thread parallel executor stress test** running simultaneous bidirectional transfers to prove deadlock freedom and 100% money conservation.
+- `tests/test_concurrency.py` (1 test): **10-thread parallel executor stress test** running simultaneous bidirectional transfers to verify race condition resilience and 100% money conservation.
+- `tests/test_postgres_compatibility.py` (7 tests): Engine pool configuration, integer-only money formatting (`divmod`), BIGINT check constraints, helper transaction ownership (`auto_commit=False`), read-only `GET /wallets/me`, strict test database safety validator, and Alembic PostgreSQL trigger definitions. *(Note: PostgreSQL schema and code compatibility are implemented and verified in the test suite; real integration testing against an external PostgreSQL database is pending).*
 
 ---
 
