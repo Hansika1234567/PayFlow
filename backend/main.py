@@ -12,24 +12,56 @@ from backend.routers import auth, wallets, transfers, ledger
 # Initialize database schema tables on startup
 Base.metadata.create_all(bind=engine)
 
-# Database-level immutability protection for Ledger
-if settings.DATABASE_URL.startswith("sqlite"):
-    with engine.connect() as conn:
-        conn.execute(text("""
-        CREATE TRIGGER IF NOT EXISTS prevent_ledger_update
-        BEFORE UPDATE ON ledger_entries
-        BEGIN
-            SELECT RAISE(ABORT, 'Ledger entries are strictly immutable and cannot be updated.');
-        END;
-        """))
-        conn.execute(text("""
-        CREATE TRIGGER IF NOT EXISTS prevent_ledger_delete
-        BEFORE DELETE ON ledger_entries
-        BEGIN
-            SELECT RAISE(ABORT, 'Historical ledger audit records cannot be deleted.');
-        END;
-        """))
-        conn.commit()
+def init_ledger_immutability_triggers(target_engine, is_sqlite_db: bool):
+    """
+    Installs database-level engine triggers preventing UPDATE and DELETE on ledger_entries.
+    Ensures that whether running on SQLite or PostgreSQL, historical audit entries are strictly immutable.
+    """
+    try:
+        with target_engine.connect() as conn:
+            if is_sqlite_db:
+                conn.execute(text("""
+                CREATE TRIGGER IF NOT EXISTS prevent_ledger_update
+                BEFORE UPDATE ON ledger_entries
+                BEGIN
+                    SELECT RAISE(ABORT, 'Ledger entries are strictly immutable and cannot be updated.');
+                END;
+                """))
+                conn.execute(text("""
+                CREATE TRIGGER IF NOT EXISTS prevent_ledger_delete
+                BEFORE DELETE ON ledger_entries
+                BEGIN
+                    SELECT RAISE(ABORT, 'Historical ledger audit records cannot be deleted.');
+                END;
+                """))
+            else:
+                # PostgreSQL PL/pgSQL function and triggers
+                conn.execute(text("""
+                CREATE OR REPLACE FUNCTION enforce_ledger_immutability()
+                RETURNS trigger AS $$
+                BEGIN
+                    RAISE EXCEPTION 'Ledger entries are strictly immutable and cannot be updated or deleted.';
+                END;
+                $$ LANGUAGE plpgsql;
+                """))
+                conn.execute(text("""
+                DROP TRIGGER IF EXISTS prevent_ledger_update ON ledger_entries;
+                CREATE TRIGGER prevent_ledger_update
+                BEFORE UPDATE ON ledger_entries
+                FOR EACH ROW EXECUTE FUNCTION enforce_ledger_immutability();
+                """))
+                conn.execute(text("""
+                DROP TRIGGER IF EXISTS prevent_ledger_delete ON ledger_entries;
+                CREATE TRIGGER prevent_ledger_delete
+                BEFORE DELETE ON ledger_entries
+                FOR EACH ROW EXECUTE FUNCTION enforce_ledger_immutability();
+                """))
+            conn.commit()
+    except Exception as e:
+        print(f"[Triggers] Notice: {e}")
+
+# Initialize database-level immutability protection for Ledger
+init_ledger_immutability_triggers(engine, settings.DATABASE_URL.startswith("sqlite"))
 
 def seed_demo_accounts():
     """Ensure alice_demo and bob_demo exist with initial wallets for instant UI evaluation."""

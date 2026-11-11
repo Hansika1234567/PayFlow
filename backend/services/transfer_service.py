@@ -6,6 +6,7 @@ from sqlalchemy import or_, update
 from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException, status
 
+from backend.config import settings
 from backend.models.user import User
 from backend.models.wallet import Wallet
 from backend.models.transaction import Transaction
@@ -122,7 +123,7 @@ def execute_transfer(db: Session, sender: User, request: TransferRequest) -> Tra
         locked_sender = wallet_a if wallet_a.id == sender_wallet.id else wallet_b
         locked_receiver = wallet_a if wallet_a.id == receiver_wallet.id else wallet_b
 
-        # 6. Check Balance Invariant
+        # 6. Check Balance Invariants
         if locked_sender.balance < amount_cents:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -130,6 +131,12 @@ def execute_transfer(db: Session, sender: User, request: TransferRequest) -> Tra
                     f"Insufficient funds. Required: ${amount_cents / 100:.2f}, "
                     f"Available balance: ${locked_sender.balance_in_dollars:.2f}"
                 )
+            )
+
+        if locked_receiver.balance + amount_cents > settings.MAX_SAFE_BALANCE_CENTS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Transfer exceeds recipient's maximum permitted wallet balance capacity."
             )
 
         # 7. Mutate Balances using Conditional Atomic SQL expressions

@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     # Database Configuration (supports PostgreSQL if specified in env, defaults to SQLite)
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./payflow.db")
     
+    # PostgreSQL Connection Pooling (applied when connected to PostgreSQL)
+    DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "10"))
+    DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+    DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "30"))
+    DB_POOL_RECYCLE: int = int(os.getenv("DB_POOL_RECYCLE", "1800"))
+    
     # Security Configuration
     # In production, SECRET_KEY must be provided explicitly via environment variable.
     # In development/test, a fallback is provided for convenience.
@@ -29,6 +35,12 @@ class Settings(BaseSettings):
     # Financial Invariants
     INITIAL_WALLET_BALANCE_CENTS: int = 100000  # $1,000.00 in cents for newly registered test accounts
     DEFAULT_CURRENCY: str = "USD"
+    
+    # Money Precision Bounds:
+    # JavaScript Number.MAX_SAFE_INTEGER is 2^53 - 1 (9,007,199,254,740,991 cents ~= $90.07 Trillion).
+    # Wallet balances cannot exceed this upper bound to guarantee IEEE-754 precision integrity.
+    MAX_SAFE_BALANCE_CENTS: int = 9007199254740991
+    MAX_TRANSACTION_AMOUNT_CENTS: int = 100000000  # $1,000,000.00 max per single transfer
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
